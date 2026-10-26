@@ -47,3 +47,13 @@
 {"time": "2026-10-26T20:24:11+00:00", "model": "lgbm", "split": "valid", "auc": 0.703001, "rounds": 179, "features": 27, "ranker_days": 2}
 {"time": "2026-10-26T20:25:12+00:00", "model": "lgbm", "split": "valid", "auc": 0.703674, "rounds": 263, "features": 27, "ranker_days": 3}
 {"time": "2026-10-26T20:30:28+00:00", "model": "lgbm", "split": "valid", "auc": 0.703425, "rounds": 217, "features": 27, "ranker_days": 3}
+{"time": "2026-10-26T20:53:36+00:00", "model": "lgbm", "split": "valid", "auc": 0.72694, "rounds": 780, "features": 27, "ranker_days": 3}
+{"time": "2026-10-26T21:38:21+00:00", "model": "lgbm", "split": "valid", "auc": 0.749588, "rounds": 1035, "features": 31, "ranker_days": 3}
+{"time": "2026-10-26T21:44:59+00:00", "model": "lgbm", "split": "valid", "auc": 0.7503, "rounds": 936, "features": 31, "ranker_days": 3}
+{"time": "2026-10-26T21:59:33+00:00", "model": "lgbm", "split": "valid", "auc": 0.792924, "rounds": 715, "features": 31, "ranker_days": 3}
+{"time": "2026-10-26T22:06:11+00:00", "model": "lgbm", "split": "valid", "auc": 0.794055, "rounds": 928, "features": 31, "ranker_days": 3}
+{"time": "2026-10-26T22:08:34+00:00", "model": "lgbm", "split": "valid", "auc": 0.7943, "trial": 0, "rounds": 855, "als": {"factors": 12, "regularization": 0.83, "alpha": 400.0, "iterations": 25, "random_state": 42}, "lgbm": {"objective": "binary", "metric": "auc", "learning_rate": 0.014, "num_leaves": 86, "min_data_in_leaf": 130, "feature_fraction": 0.91, "bagging_fraction": 0.74, "bagging_freq": 1, "lambda_l2": 0.0077, "verbose": -1}}
+{"time": "2026-10-26T22:13:50+00:00", "model": "lgbm", "split": "valid", "auc": 0.794067, "rounds": 883, "features": 31, "ranker_days": 3}
+{"time": "2026-10-26T22:15:15+00:00", "model": "lgbm", "split": "valid", "auc": 0.794074, "rounds": 441, "features": 31, "ranker_days": 1}
+{"time": "2026-10-26T22:16:16+00:00", "model": "lgbm", "split": "valid", "auc": 0.794584, "rounds": 758, "features": 31, "ranker_days": 2}
+{"time": "2026-10-26T22:21:28+00:00", "model": "lgbm", "split": "valid", "auc": 0.802461, "rounds": 728, "features": 31, "ranker_days": 3}

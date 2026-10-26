@@ -27,13 +27,14 @@ EVAL_PARQUET = INTERIM_DATA_DIR / "evaluation.parquet"
 @dataclass(frozen=True)
 class TimeSplit:
     ranker_days: tuple[datetime, ...]  # ranker learns on each day, with stats from earlier days
-    target_day: datetime  # predict each user's first event from this day, stats from earlier days
+    target_day: datetime  # predict each user's first event from this day on, stats from before it
 
 
-# Practice exam on Jan 26; the real one is the same split shifted a day.
+# Evaluation is each user's first event over the week after the cutoff, so a one-day target
+# over-weights active users; first events over Jan 24-26 match evaluation's history lengths.
 VALID_SPLIT = TimeSplit(
-    ranker_days=tuple(datetime(2025, 1, day, tzinfo=UTC) for day in range(23, 26)),
-    target_day=datetime(2025, 1, 26, tzinfo=UTC),
+    ranker_days=tuple(datetime(2025, 1, day, tzinfo=UTC) for day in range(21, 24)),
+    target_day=datetime(2025, 1, 24, tzinfo=UTC),
 )
 SUBMIT_SPLIT = TimeSplit(
     ranker_days=tuple(datetime(2025, 1, day, tzinfo=UTC) for day in range(24, 27)),
