@@ -32,18 +32,22 @@ def event_ids(frame: pl.LazyFrame) -> set[str]:
     return set(frame.select("event_id").collect()["event_id"])
 
 
-def test_windows_split_by_time(train):
+def test_windows_split_by_day(train):
     windows = make_windows(train, VALID_SPLIT)
-    assert event_ids(windows.stats) == {"e1"}
-    assert event_ids(windows.ranker) == {"e2"}
+    jan_24, jan_25 = windows.ranker[-2:]
+    assert event_ids(jan_24.stats) == set()
+    assert event_ids(jan_24.rows) == {"e1"}
+    assert event_ids(jan_25.stats) == {"e1"}
+    assert event_ids(jan_25.rows) == {"e2"}
+    assert event_ids(windows.target.stats) == {"e1", "e2"}
     # Only each user's first event on Jan 26, with all of its candidate rows.
-    assert event_ids(windows.target) == {"e4", "e5"}
-    assert windows.target.collect().height == 4
+    assert event_ids(windows.target.rows) == {"e4", "e5"}
+    assert windows.target.rows.collect().height == 4
 
 
 def test_windows_use_evaluation_as_target(train):
     evaluation = pl.LazyFrame({"event_id": ["x"], "rowid": ["r"]})
-    assert event_ids(make_windows(train, VALID_SPLIT, evaluation).target) == {"x"}
+    assert event_ids(make_windows(train, VALID_SPLIT, evaluation).target.rows) == {"x"}
 
 
 @pytest.fixture

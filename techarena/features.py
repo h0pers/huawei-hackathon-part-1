@@ -3,6 +3,7 @@ from dataclasses import dataclass
 import polars as pl
 
 from techarena.embeddings import Als, als_features, fit_als
+from techarena.validation import Window
 
 SMOOTHING_K = 50
 DAY_SECONDS = 86_400
@@ -176,3 +177,8 @@ def build_features(tables: StatsTables, target: pl.LazyFrame) -> pl.LazyFrame:
         )
         .select(*keep, *FEATURES)
     )
+
+
+def window_features(window: Window) -> pl.DataFrame:
+    """Features for a window's rows, using stats from before the window."""
+    return build_features(build_stats_tables(window.stats), window.rows).collect()

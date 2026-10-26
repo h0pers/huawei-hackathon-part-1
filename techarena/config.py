@@ -26,13 +26,19 @@ EVAL_PARQUET = INTERIM_DATA_DIR / "evaluation.parquet"
 
 @dataclass(frozen=True)
 class TimeSplit:
-    stats_until: datetime  # stats: events before this
-    ranker_until: datetime  # ranker: events from stats_until to this; target: after
+    ranker_days: tuple[datetime, ...]  # ranker learns on each day, with stats from earlier days
+    target_day: datetime  # predict each user's first event from this day, stats from earlier days
 
 
 # Practice exam on Jan 26; the real one is the same split shifted a day.
-VALID_SPLIT = TimeSplit(datetime(2025, 1, 25, tzinfo=UTC), datetime(2025, 1, 26, tzinfo=UTC))
-SUBMIT_SPLIT = TimeSplit(datetime(2025, 1, 26, tzinfo=UTC), datetime(2025, 1, 27, tzinfo=UTC))
+VALID_SPLIT = TimeSplit(
+    ranker_days=tuple(datetime(2025, 1, day, tzinfo=UTC) for day in range(23, 26)),
+    target_day=datetime(2025, 1, 26, tzinfo=UTC),
+)
+SUBMIT_SPLIT = TimeSplit(
+    ranker_days=tuple(datetime(2025, 1, day, tzinfo=UTC) for day in range(24, 27)),
+    target_day=datetime(2025, 1, 27, tzinfo=UTC),
+)
 
 MODELS_DIR = PROJ_ROOT / "models"
 SUBMISSION_PATH = MODELS_DIR / "submission.csv"

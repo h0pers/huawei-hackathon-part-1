@@ -14,7 +14,7 @@ from techarena.validation import log_experiment, make_windows
 app = typer.Typer()
 
 # Reruns add trials to this study; rename it when features change so old trials don't mix in.
-STUDY_NAME = "als-lgbm"
+STUDY_NAME = "als-lgbm-multi-day"
 
 
 def suggest_params(trial: optuna.Trial) -> tuple[dict, dict]:
@@ -55,14 +55,20 @@ def current_params() -> dict:
 def main(n_trials: int = 40):
     """Search ALS and LightGBM settings together, maximising validation AUC."""
     windows = make_windows(pl.scan_parquet(TRAIN_PARQUET), VALID_SPLIT)
-    tables = build_stats_tables(windows.stats)
-    clicks = click_log(windows.stats)
+    # Stats tables per window are fixed; only ALS is refitted in each trial.
+    prepared = [
+        (window, build_stats_tables(window.stats), click_log(window.stats))
+        for window in [*windows.ranker, windows.target]
+    ]
 
     def objective(trial: optuna.Trial) -> float:
         als_params, lgbm_params = suggest_params(trial)
-        run_tables = replace(tables, als=fit_als(clicks, als_params))
-        ranker_rows = build_features(run_tables, windows.ranker).collect()
-        target_rows = build_features(run_tables, windows.target).collect()
+        frames = [
+            build_features(replace(tables, als=fit_als(clicks, als_params)), window.rows).collect()
+            for window, tables, clicks in prepared
+        ]
+        ranker_rows = pl.concat(frames[:-1], how="vertical_relaxed")
+        target_rows = frames[-1]
         model, auc = train_and_score(ranker_rows, target_rows, lgbm_params)
         log_experiment(
             "lgbm",
