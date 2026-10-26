@@ -83,6 +83,11 @@ baseline:
 train:
 	$(PYTHON_INTERPRETER) -m techarena.modeling.train
 
+## Tune ALS and LightGBM settings with Optuna
+.PHONY: tune
+tune:
+	$(PYTHON_INTERPRETER) -m techarena.modeling.tune
+
 ## Retrain one day later and write models/submission.csv
 .PHONY: predict
 predict: train
