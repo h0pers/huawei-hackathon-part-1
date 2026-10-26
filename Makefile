@@ -58,10 +58,15 @@ create_environment:
 #################################################################################
 
 
-## Make dataset
+## Download raw CSVs from Kaggle into data/raw
+.PHONY: download
+download: requirements
+	$(PYTHON_INTERPRETER) -m techarena.dataset download
+
+## Convert raw CSVs into Parquet in data/interim
 .PHONY: data
-data: requirements
-	$(PYTHON_INTERPRETER) techarena/dataset.py
+data: download
+	$(PYTHON_INTERPRETER) -m techarena.dataset main
 
 
 #################################################################################
