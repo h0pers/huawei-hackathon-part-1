@@ -1,0 +1,47 @@
+[build-system]
+requires = ["flit_core >=3.2,<4"]
+build-backend = "flit_core.buildapi"
+
+[project]
+name = "techarena"
+version = "0.0.1"
+description = "Huawei Tech Arena hackathon ML project."
+authors = [
+  { name = "Dmytro Hryshchenko" },
+]
+
+readme = "README.md"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    
+]
+dependencies = [
+    "ipython",
+    "jupyterlab",
+    "loguru",
+    "matplotlib",
+    "notebook",
+    "numpy",
+    "pandas",
+    "pip",
+    "python-dotenv",
+    "ruff",
+    "scikit-learn",
+    "tqdm",
+    "typer",
+]
+requires-python = "~=3.13.0"
+
+
+[tool.ruff]
+line-length = 99
+src = ["techarena"]
+include = ["pyproject.toml", "techarena/**/*.py"]
+
+[tool.ruff.lint]
+extend-select = ["I"]  # Add import sorting
+
+[tool.ruff.lint.isort]
+known-first-party = ["techarena"]
+force-sort-within-sections = true
+
