@@ -68,6 +68,16 @@ download: requirements
 data: download
 	$(PYTHON_INTERPRETER) -m techarena.dataset main
 
+## Run tests
+.PHONY: test
+test:
+	$(PYTHON_INTERPRETER) -m pytest
+
+## Score the starter baseline on the validation day
+.PHONY: baseline
+baseline:
+	$(PYTHON_INTERPRETER) -m techarena.modeling.baseline
+
 
 #################################################################################
 # Self Documenting Commands                                                     #
