@@ -31,6 +31,21 @@ def to_dataset(frame: pl.DataFrame) -> lgb.Dataset:
     )
 
 
+def train_and_score(
+    ranker_rows: pl.DataFrame, target_rows: pl.DataFrame, params: dict = PARAMS
+) -> tuple[lgb.Booster, float]:
+    """Train with early stopping on the target rows and return the model and its AUC."""
+    model = lgb.train(
+        params,
+        to_dataset(ranker_rows),
+        num_boost_round=3000,
+        valid_sets=[to_dataset(target_rows)],
+        callbacks=[lgb.early_stopping(100, verbose=False)],
+    )
+    predicted = pl.Series(model.predict(target_rows.select(FEATURES).to_numpy()))
+    return model, global_auc(target_rows["clicked"], predicted)
+
+
 @app.command()
 def main(submit: bool = False):
     """Train on the validation split and report AUC, or with --submit retrain one day later."""
@@ -49,17 +64,8 @@ def main(submit: bool = False):
         return
 
     target_rows = build_features(tables, windows.target).collect()
-    model = lgb.train(
-        PARAMS,
-        to_dataset(ranker_rows),
-        num_boost_round=3000,
-        valid_sets=[to_dataset(target_rows)],
-        callbacks=[lgb.early_stopping(100), lgb.log_evaluation(100)],
-    )
+    model, auc = train_and_score(ranker_rows, target_rows)
     model.save_model(VALID_MODEL, num_iteration=model.best_iteration)
-
-    predicted = pl.Series(model.predict(target_rows.select(FEATURES).to_numpy()))
-    auc = global_auc(target_rows["clicked"], predicted)
     log_experiment("lgbm", "valid", auc, rounds=model.best_iteration, features=len(FEATURES))
 
     importance = sorted(

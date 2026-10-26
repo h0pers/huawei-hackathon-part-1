@@ -25,7 +25,7 @@ class Als:
     item_unit: np.ndarray  # item_factors scaled to length 1, for cosine similarity
 
 
-def fit_als(clicks: pl.LazyFrame) -> Als:
+def fit_als(clicks: pl.LazyFrame, params: dict = ALS_PARAMS) -> Als:
     """Learn user and item taste vectors from who clicked what."""
     counts = clicks.group_by("user_id", "item_id").agg(pl.len().alias("n")).collect()
     users = counts.select("user_id").unique().with_row_index("user_idx")
@@ -39,7 +39,7 @@ def fit_als(clicks: pl.LazyFrame) -> Als:
         shape=(users.height, items.height),
     )
 
-    model = AlternatingLeastSquares(**ALS_PARAMS)
+    model = AlternatingLeastSquares(**params)
     # implicit parallelises itself; extra BLAS threads slow it down (per implicit's docs).
     with threadpool_limits(1, "blas"):
         model.fit(matrix, show_progress=False)

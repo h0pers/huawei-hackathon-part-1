@@ -36,6 +36,7 @@ SUBMIT_SPLIT = TimeSplit(datetime(2025, 1, 26, tzinfo=UTC), datetime(2025, 1, 27
 
 MODELS_DIR = PROJ_ROOT / "models"
 SUBMISSION_PATH = MODELS_DIR / "submission.csv"
+OPTUNA_DB = MODELS_DIR / "optuna.db"
 
 REPORTS_DIR = PROJ_ROOT / "reports"
 FIGURES_DIR = REPORTS_DIR / "figures"
