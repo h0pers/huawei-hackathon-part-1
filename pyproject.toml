@@ -19,6 +19,7 @@ dependencies = [
     "ipython",
     "jupyterlab",
     "kagglehub>=1.0.3",
+    "lightgbm>=4.7.0",
     "loguru",
     "matplotlib",
     "notebook",

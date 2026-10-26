@@ -78,6 +78,17 @@ test:
 baseline:
 	$(PYTHON_INTERPRETER) -m techarena.modeling.baseline
 
+## Train LightGBM on the validation split and report AUC
+.PHONY: train
+train:
+	$(PYTHON_INTERPRETER) -m techarena.modeling.train
+
+## Retrain one day later and write models/submission.csv
+.PHONY: predict
+predict: train
+	$(PYTHON_INTERPRETER) -m techarena.modeling.train --submit
+	$(PYTHON_INTERPRETER) -m techarena.modeling.predict
+
 
 #################################################################################
 # Self Documenting Commands                                                     #

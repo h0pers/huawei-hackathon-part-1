@@ -1,1 +1,2 @@
 {"time": "2026-10-26T19:09:26+00:00", "model": "baseline", "split": "valid", "auc": 0.614087}
+{"time": "2026-10-26T19:21:29+00:00", "model": "lgbm", "split": "valid", "auc": 0.63406, "rounds": 90, "features": 23}

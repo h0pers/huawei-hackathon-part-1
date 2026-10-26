@@ -3,6 +3,7 @@
 
 # Model outputs, re-created by the pipeline
 /models/*.csv
+/models/*.txt
 
 # Mac OS-specific storage files
 .DS_Store
