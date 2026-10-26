@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 import polars as pl
 
+from techarena.choice import Choice, choice_features, fit_choice
 from techarena.embeddings import Als, als_features, fit_als
 from techarena.validation import Window
 
@@ -34,12 +35,18 @@ FEATURES = [
     "als_user_score",
     "als_hist_sim",
     "als_last_sim",
+    # Softmax choice model trained on every impression: candidates compete with each other and
+    # with clicking nothing.
+    "choice_prob",
+    "choice_score",
+    "choice_no_click",
     # Candidate compared with the other candidates of the same event.
     "event_cands_in_hist",
     "item_ctr_rank",
     "item_ctr_vs_event",
     "covis_rank",
     "als_hist_rank",
+    "choice_rank",
     "time_bucket",
     "day_type",
 ]
@@ -51,6 +58,7 @@ class StatsTables:
     users: pl.LazyFrame
     covis: pl.LazyFrame
     als: Als
+    choice: Choice
 
 
 def click_log(stats: pl.LazyFrame) -> pl.LazyFrame:
@@ -110,7 +118,14 @@ def build_stats_tables(stats: pl.LazyFrame) -> StatsTables:
             (pl.col("co") / (pl.col("norm") * pl.col("norm_hist"))).alias("covis"),
         )
     )
-    return StatsTables(items=items, users=users, covis=covis.collect().lazy(), als=fit_als(clicks))
+    als = fit_als(clicks)
+    return StatsTables(
+        items=items,
+        users=users,
+        covis=covis.collect().lazy(),
+        als=als,
+        choice=fit_choice(stats, als),
+    )
 
 
 def history_features(target: pl.LazyFrame, covis: pl.LazyFrame) -> pl.LazyFrame:
@@ -150,10 +165,11 @@ def build_features(tables: StatsTables, target: pl.LazyFrame) -> pl.LazyFrame:
     span_days = (last_ts - first_ts) / DAY_SECONDS
 
     keep = [c for c in ("rowid", "event_id", "clicked") if c in target.collect_schema()]
-    als = als_features(
-        tables.als,
-        target.select("rowid", "event_id", "user_id", "item_id", "history_item_ids").collect(),
-    )
+    target_rows = target.select(
+        "rowid", "event_id", "user_id", "item_id", "history_item_ids"
+    ).collect()
+    als = als_features(tables.als, target_rows)
+    choice = choice_features(tables.choice, target_rows)
     return (
         target.with_columns(
             hist_len=hist_len,
@@ -165,6 +181,7 @@ def build_features(tables: StatsTables, target: pl.LazyFrame) -> pl.LazyFrame:
         .join(tables.items, on="item_id", how="left")
         .join(tables.users, on="user_id", how="left")
         .join(als.lazy(), on="rowid", how="left")
+        .join(choice.lazy(), on="rowid", how="left")
         .with_columns(
             pl.col("cand_hist_count", "covis_sum", "covis_recent", "item_clicks").fill_null(0)
         )
@@ -174,6 +191,7 @@ def build_features(tables: StatsTables, target: pl.LazyFrame) -> pl.LazyFrame:
             item_ctr_vs_event=pl.col("item_ctr") - pl.col("item_ctr").mean().over("event_id"),
             covis_rank=pl.col("covis_sum").rank(descending=True).over("event_id"),
             als_hist_rank=pl.col("als_hist_sim").rank(descending=True).over("event_id"),
+            choice_rank=pl.col("choice_prob").rank(descending=True).over("event_id"),
         )
         .select(*keep, *FEATURES)
     )

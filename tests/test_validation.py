@@ -14,10 +14,10 @@ def at(day: int, hour: int = 0) -> int:
 @pytest.fixture
 def train() -> pl.LazyFrame:
     events = [
-        ("e1", "u1", at(24)),
-        ("e2", "u1", at(25)),
-        ("e3", "u1", at(26, 5)),
-        ("e4", "u1", at(26, 1)),
+        ("e1", "u1", at(22)),
+        ("e2", "u1", at(23)),
+        ("e3", "u1", at(25, 5)),
+        ("e4", "u1", at(24, 1)),
         ("e5", "u2", at(26, 9)),
     ]
     rows = [
@@ -34,13 +34,13 @@ def event_ids(frame: pl.LazyFrame) -> set[str]:
 
 def test_windows_split_by_day(train):
     windows = make_windows(train, VALID_SPLIT)
-    jan_24, jan_25 = windows.ranker[-2:]
-    assert event_ids(jan_24.stats) == set()
-    assert event_ids(jan_24.rows) == {"e1"}
-    assert event_ids(jan_25.stats) == {"e1"}
-    assert event_ids(jan_25.rows) == {"e2"}
+    jan_22, jan_23 = windows.ranker[-2:]
+    assert event_ids(jan_22.stats) == set()
+    assert event_ids(jan_22.rows) == {"e1"}
+    assert event_ids(jan_23.stats) == {"e1"}
+    assert event_ids(jan_23.rows) == {"e2"}
     assert event_ids(windows.target.stats) == {"e1", "e2"}
-    # Only each user's first event on Jan 26, with all of its candidate rows.
+    # Only each user's first event on or after Jan 24, with all of its candidate rows.
     assert event_ids(windows.target.rows) == {"e4", "e5"}
     assert windows.target.rows.collect().height == 4
 

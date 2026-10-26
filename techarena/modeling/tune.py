@@ -5,25 +5,27 @@ import optuna
 import polars as pl
 import typer
 
+from techarena.choice import fit_choice
 from techarena.config import MODELS_DIR, OPTUNA_DB, TRAIN_PARQUET, VALID_SPLIT
 from techarena.embeddings import ALS_PARAMS, fit_als
-from techarena.features import build_features, build_stats_tables, click_log
+from techarena.features import StatsTables, build_features, build_stats_tables, click_log
 from techarena.modeling.train import PARAMS, train_and_score
-from techarena.validation import log_experiment, make_windows
+from techarena.validation import Window, log_experiment, make_windows
 
 app = typer.Typer()
 
 # Reruns add trials to this study; rename it when features change so old trials don't mix in.
-STUDY_NAME = "als-lgbm-multi-day"
+STUDY_NAME = "als-choice-lgbm"
 
 
 def suggest_params(trial: optuna.Trial) -> tuple[dict, dict]:
     als = {
         **ALS_PARAMS,
-        "factors": trial.suggest_int("factors", 32, 256, log=True),
-        "regularization": trial.suggest_float("regularization", 1e-3, 1.0, log=True),
-        "alpha": trial.suggest_float("alpha", 1.0, 100.0, log=True),
-        "iterations": trial.suggest_int("iterations", 10, 30),
+        # The choice model prefers few factors with a large alpha.
+        "factors": trial.suggest_int("factors", 8, 32, log=True),
+        "regularization": trial.suggest_float("regularization", 0.05, 10.0, log=True),
+        "alpha": trial.suggest_float("alpha", 20.0, 2000.0, log=True),
+        "iterations": trial.suggest_int("iterations", 10, 40),
     }
     lgbm = {
         **PARAMS,
@@ -46,25 +48,30 @@ def current_params() -> dict:
         "min_data_in_leaf",
         "feature_fraction",
         "bagging_fraction",
+        "lambda_l2",
     )
-    # PARAMS has no lambda_l2 (LightGBM default 0); 1e-3 is the closest value in range.
-    return {k: ALS_PARAMS[k] for k in als} | {k: PARAMS[k] for k in lgbm} | {"lambda_l2": 1e-3}
+    return {k: ALS_PARAMS[k] for k in als} | {k: PARAMS[k] for k in lgbm}
 
 
 @app.command()
 def main(n_trials: int = 40):
     """Search ALS and LightGBM settings together, maximising validation AUC."""
     windows = make_windows(pl.scan_parquet(TRAIN_PARQUET), VALID_SPLIT)
-    # Stats tables per window are fixed; only ALS is refitted in each trial.
+    # Stats tables per window are fixed; only ALS, and the choice model built on it, are refitted
+    # in each trial.
     prepared = [
         (window, build_stats_tables(window.stats), click_log(window.stats))
         for window in [*windows.ranker, windows.target]
     ]
 
+    def refit(tables: StatsTables, window: Window, clicks: pl.LazyFrame, params: dict):
+        als = fit_als(clicks, params)
+        return replace(tables, als=als, choice=fit_choice(window.stats, als))
+
     def objective(trial: optuna.Trial) -> float:
         als_params, lgbm_params = suggest_params(trial)
         frames = [
-            build_features(replace(tables, als=fit_als(clicks, als_params)), window.rows).collect()
+            build_features(refit(tables, window, clicks, als_params), window.rows).collect()
             for window, tables, clicks in prepared
         ]
         ranker_rows = pl.concat(frames[:-1], how="vertical_relaxed")
