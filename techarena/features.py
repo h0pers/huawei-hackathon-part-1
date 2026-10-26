@@ -2,6 +2,8 @@ from dataclasses import dataclass
 
 import polars as pl
 
+from techarena.embeddings import Als, als_features, fit_als
+
 SMOOTHING_K = 50
 DAY_SECONDS = 86_400
 
@@ -27,11 +29,16 @@ FEATURES = [
     "covis_sum",
     "covis_max",
     "covis_recent",
+    # ALS taste vectors: does the candidate match the user's taste?
+    "als_user_score",
+    "als_hist_sim",
+    "als_last_sim",
     # Candidate compared with the other candidates of the same event.
     "event_cands_in_hist",
     "item_ctr_rank",
     "item_ctr_vs_event",
     "covis_rank",
+    "als_hist_rank",
     "time_bucket",
     "day_type",
 ]
@@ -42,6 +49,7 @@ class StatsTables:
     items: pl.LazyFrame
     users: pl.LazyFrame
     covis: pl.LazyFrame
+    als: Als
 
 
 def click_log(stats: pl.LazyFrame) -> pl.LazyFrame:
@@ -101,7 +109,7 @@ def build_stats_tables(stats: pl.LazyFrame) -> StatsTables:
             (pl.col("co") / (pl.col("norm") * pl.col("norm_hist"))).alias("covis"),
         )
     )
-    return StatsTables(items=items, users=users, covis=covis.collect().lazy())
+    return StatsTables(items=items, users=users, covis=covis.collect().lazy(), als=fit_als(clicks))
 
 
 def history_features(target: pl.LazyFrame, covis: pl.LazyFrame) -> pl.LazyFrame:
@@ -141,6 +149,10 @@ def build_features(tables: StatsTables, target: pl.LazyFrame) -> pl.LazyFrame:
     span_days = (last_ts - first_ts) / DAY_SECONDS
 
     keep = [c for c in ("rowid", "event_id", "clicked") if c in target.collect_schema()]
+    als = als_features(
+        tables.als,
+        target.select("rowid", "event_id", "user_id", "item_id", "history_item_ids").collect(),
+    )
     return (
         target.with_columns(
             hist_len=hist_len,
@@ -151,6 +163,7 @@ def build_features(tables: StatsTables, target: pl.LazyFrame) -> pl.LazyFrame:
         .join(history_features(target, tables.covis), on="rowid", how="left")
         .join(tables.items, on="item_id", how="left")
         .join(tables.users, on="user_id", how="left")
+        .join(als.lazy(), on="rowid", how="left")
         .with_columns(
             pl.col("cand_hist_count", "covis_sum", "covis_recent", "item_clicks").fill_null(0)
         )
@@ -159,6 +172,7 @@ def build_features(tables: StatsTables, target: pl.LazyFrame) -> pl.LazyFrame:
             item_ctr_rank=pl.col("item_ctr").rank(descending=True).over("event_id"),
             item_ctr_vs_event=pl.col("item_ctr") - pl.col("item_ctr").mean().over("event_id"),
             covis_rank=pl.col("covis_sum").rank(descending=True).over("event_id"),
+            als_hist_rank=pl.col("als_hist_sim").rank(descending=True).over("event_id"),
         )
         .select(*keep, *FEATURES)
     )
