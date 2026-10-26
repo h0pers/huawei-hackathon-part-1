@@ -82,11 +82,10 @@ def main(submit: bool = False, output_path: Path = SUBMISSION_PATH):
     """Score the validation day, or with --submit write a submission for evaluation.csv."""
     train = pl.scan_parquet(TRAIN_PARQUET)
     if not submit:
-        windows = make_windows(train, VALID_SPLIT)
-        labelled = pl.concat([windows.stats, windows.ranker])
+        target = make_windows(train, VALID_SPLIT).target
         scored = (
-            predict(labelled, windows.target)
-            .join(windows.target.select("rowid", "clicked"), on="rowid")
+            predict(target.stats, target.rows)
+            .join(target.rows.select("rowid", "clicked"), on="rowid")
             .collect()
         )
         auc = global_auc(scored["clicked"], scored["predicted_probability"])
@@ -95,10 +94,9 @@ def main(submit: bool = False, output_path: Path = SUBMISSION_PATH):
         return
 
     evaluation = pl.scan_parquet(EVAL_PARQUET)
-    windows = make_windows(train, SUBMIT_SPLIT, evaluation)
-    labelled = pl.concat([windows.stats, windows.ranker])
+    target = make_windows(train, SUBMIT_SPLIT, evaluation).target
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    predict(labelled, windows.target).collect().write_csv(output_path)
+    predict(target.stats, target.rows).collect().write_csv(output_path)
     check_submission(output_path, evaluation.select("rowid").collect()["rowid"])
     logger.success(f"Wrote submission to {output_path}")
 

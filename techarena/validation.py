@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 import json
 from pathlib import Path
 
@@ -11,11 +11,19 @@ from techarena.config import EXPERIMENTS_LOG, TimeSplit
 SUBMISSION_COLUMNS = ["rowid", "predicted_probability"]
 
 
+DAY = timedelta(days=1)
+
+
+@dataclass(frozen=True)
+class Window:
+    stats: pl.LazyFrame  # labelled events before the window, for click-rate stats and ALS
+    rows: pl.LazyFrame  # rows to build features for
+
+
 @dataclass(frozen=True)
 class Windows:
-    stats: pl.LazyFrame
-    ranker: pl.LazyFrame
-    target: pl.LazyFrame
+    ranker: list[Window]
+    target: Window
 
 
 def first_event_per_user(rows: pl.LazyFrame) -> pl.LazyFrame:
@@ -33,19 +41,29 @@ def first_event_per_user(rows: pl.LazyFrame) -> pl.LazyFrame:
 def make_windows(
     train: pl.LazyFrame, split: TimeSplit, evaluation: pl.LazyFrame | None = None
 ) -> Windows:
-    """Cut train by time; the target is evaluation if given, else the first event after the split."""
-    stats_until = int(split.stats_until.timestamp())
-    ranker_until = int(split.ranker_until.timestamp())
-    target = (
+    """Cut train by day; the target is evaluation if given, else the first event per user."""
+
+    def seconds(day: datetime) -> int:
+        return int(day.timestamp())
+
+    def before(day: datetime) -> pl.LazyFrame:
+        return train.filter(pl.col("timestamp") < seconds(day))
+
+    ranker = [
+        Window(
+            stats=before(day),
+            rows=train.filter(
+                pl.col("timestamp").is_between(seconds(day), seconds(day + DAY), "left")
+            ),
+        )
+        for day in split.ranker_days
+    ]
+    target_rows = (
         evaluation
         if evaluation is not None
-        else first_event_per_user(train.filter(pl.col("timestamp") >= ranker_until))
+        else first_event_per_user(train.filter(pl.col("timestamp") >= seconds(split.target_day)))
     )
-    return Windows(
-        stats=train.filter(pl.col("timestamp") < stats_until),
-        ranker=train.filter(pl.col("timestamp").is_between(stats_until, ranker_until, "left")),
-        target=target,
-    )
+    return Windows(ranker=ranker, target=Window(stats=before(split.target_day), rows=target_rows))
 
 
 def global_auc(clicked: pl.Series, predicted: pl.Series) -> float:

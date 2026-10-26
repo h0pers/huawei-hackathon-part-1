@@ -4,7 +4,7 @@ import polars as pl
 import typer
 
 from techarena.config import MODELS_DIR, SUBMIT_SPLIT, TRAIN_PARQUET, VALID_SPLIT
-from techarena.features import FEATURES, build_features, build_stats_tables
+from techarena.features import FEATURES, window_features
 from techarena.validation import global_auc, log_experiment, make_windows
 
 app = typer.Typer()
@@ -47,13 +47,14 @@ def train_and_score(
 
 
 @app.command()
-def main(submit: bool = False):
+def main(submit: bool = False, ranker_days: int = 3):
     """Train on the validation split and report AUC, or with --submit retrain one day later."""
     train = pl.scan_parquet(TRAIN_PARQUET)
     windows = make_windows(train, SUBMIT_SPLIT if submit else VALID_SPLIT)
-    tables = build_stats_tables(windows.stats)
-    ranker_rows = build_features(tables, windows.ranker).collect()
-    logger.info(f"Training on {ranker_rows.height:,} rows")
+    ranker_rows = pl.concat(
+        [window_features(w) for w in windows.ranker[-ranker_days:]], how="vertical_relaxed"
+    )
+    logger.info(f"Training on {ranker_rows.height:,} rows from {ranker_days} days")
 
     if submit:
         # Reuse the number of rounds that early stopping picked on the validation split.
@@ -63,10 +64,17 @@ def main(submit: bool = False):
         logger.success(f"Saved {SUBMIT_MODEL} ({rounds} rounds)")
         return
 
-    target_rows = build_features(tables, windows.target).collect()
+    target_rows = window_features(windows.target)
     model, auc = train_and_score(ranker_rows, target_rows)
     model.save_model(VALID_MODEL, num_iteration=model.best_iteration)
-    log_experiment("lgbm", "valid", auc, rounds=model.best_iteration, features=len(FEATURES))
+    log_experiment(
+        "lgbm",
+        "valid",
+        auc,
+        rounds=model.best_iteration,
+        features=len(FEATURES),
+        ranker_days=ranker_days,
+    )
 
     importance = sorted(
         zip(FEATURES, model.feature_importance("gain")), key=lambda x: x[1], reverse=True
