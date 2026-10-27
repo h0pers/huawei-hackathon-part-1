@@ -6,18 +6,23 @@ import polars as pl
 from scipy.sparse import csr_matrix
 from threadpoolctl import threadpool_limits
 
-# Swept for the choice model, which starts from these vectors: few factors with a large alpha
-# took it from 0.711 to 0.757 AUC alone on the Jan 24-26 validation.
+# Few factors with a large alpha, on the Jan 24-26 validation. Each fit has a few more
+# factors than the 8 the fits share (see LATENT_DIM): at 16 the extra ones agree across seeds
+# too and the shared directions blur.
 ALS_PARAMS = {
-    "factors": 10,
+    "factors": 12,
     "regularization": 0.83,
     "alpha": 400.0,
     "iterations": 25,
     "random_state": 42,
 }
-# At 10 factors one fit's history similarity ranges 0.761-0.779 AUC by seed; the mean over
-# 5 seeds gives 0.780.
-ALS_SEEDS = 5
+# More fits pin down the shared directions better: 5 -> 10 seeds took history similarity
+# from 0.782 to 0.785 AUC and LightGBM from 0.804 to 0.808; 20 seeds add nothing more.
+ALS_SEEDS = 10
+# The seeds agree on 8 directions (singular values of their stacked item vectors ~1 for 8,
+# then 0.69, 0.46, ...); the rest is noise from each fit. Keeping only those 8 lifts history
+# similarity from 0.772 to 0.782 AUC; 7 or 9 score 0.766 and 0.780.
+LATENT_DIM = 8
 
 
 @dataclass(frozen=True)
@@ -27,7 +32,7 @@ class Als:
     # One block of columns per seed, so dot products sum over the fits.
     user_factors: np.ndarray
     item_factors: np.ndarray
-    # Each block scaled to length 1/sqrt(seeds): cosine similarity averaged over the fits.
+    # Unit-length item directions in the subspace all the fits agree on.
     item_unit: np.ndarray
 
 
@@ -62,8 +67,16 @@ def fit_als(clicks: pl.LazyFrame, params: dict = ALS_PARAMS, seeds: int = ALS_SE
         items=items,
         user_factors=np.hstack(user_blocks),
         item_factors=np.hstack(item_blocks),
-        item_unit=np.hstack(unit_blocks),
+        item_unit=consensus(np.hstack(unit_blocks)),
     )
+
+
+def consensus(unit_blocks: np.ndarray, dim: int = LATENT_DIM) -> np.ndarray:
+    """Project the stacked per-seed unit vectors onto their top principal directions."""
+    centred = unit_blocks - unit_blocks.mean(0)
+    _, _, directions = np.linalg.svd(centred, full_matrices=False)
+    projected = centred @ directions[:dim].T
+    return projected / np.maximum(np.linalg.norm(projected, axis=1, keepdims=True), 1e-9)
 
 
 def row_dot(a: np.ndarray, b: np.ndarray) -> np.ndarray:

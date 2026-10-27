@@ -11,12 +11,12 @@ HISTORY = 20
 CANDIDATES = 10
 NO_CLICK = CANDIDATES  # label of events where nothing was clicked
 
-# Picked on the Jan 24-26 validation. Starting from ALS does most of the work: 1 to 8 epochs
-# all score within 0.003 AUC, and more epochs memorise the training events.
+# Picked on the Jan 24-26 validation. The item vectors stay fixed at ALS's: training them, or a
+# 50-dim taste vector per user, memorises the training events and AUC falls with every epoch
+# after the first (0.794 -> 0.737 alone). With only scalars per item and per user left to
+# learn, AUC alone is 0.795 and stable over 4-8 epochs.
 CHOICE_PARAMS = {
-    "epochs": 5,
-    "l2": 1e-3,
-    "user_l2": 1e-3,  # per-user taste vectors: 0.765 -> 0.773 AUC alone; larger lr overfits
+    "epochs": 8,
     "lr": 1e-3,
     "batch_size": 1024,
     "seed": 42,
@@ -36,13 +36,10 @@ class ChoiceNet(nn.Module):
     def __init__(self, item_vectors: torch.Tensor, n_users: int):
         super().__init__()
         n_items = item_vectors.shape[0]
-        # Correction to the history-based taste, learned from the user's own picks and skips.
-        self.user_taste = nn.Embedding(n_users, item_vectors.shape[1])
-        nn.init.zeros_(self.user_taste.weight)
         self.user_no_click = nn.Embedding(n_users, 1)  # each user's propensity to click nothing
         nn.init.zeros_(self.user_no_click.weight)
-        self.item = nn.Embedding.from_pretrained(item_vectors.clone(), freeze=False)
-        self.hist = nn.Embedding.from_pretrained(item_vectors.clone(), freeze=False)
+        self.item = nn.Embedding.from_pretrained(item_vectors.clone(), freeze=True)
+        self.scale = nn.Parameter(torch.tensor(5.0))  # sharpness of the taste match
         self.item_bias = nn.Embedding(n_items, 1)
         nn.init.zeros_(self.item_bias.weight)
         self.recency = nn.Parameter(torch.zeros(HISTORY))  # weight of each history slot
@@ -55,21 +52,20 @@ class ChoiceNet(nn.Module):
 
     def forward(
         self, user_idx: torch.Tensor, hist: torch.Tensor, cand: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Logits (batch, 11) with no-click last, and L2 penalties on the item-side and
-        per-user vectors used."""
+    ) -> torch.Tensor:
+        """Logits (batch, 11) with no-click last."""
         known = hist > 0
         w = torch.where(known, self.recency.exp(), torch.zeros_like(self.recency))
         w = w / w.sum(1, keepdim=True).clamp_min(1e-9)
-        taste = self.user_taste(user_idx)
-        user = (w.unsqueeze(-1) * self.hist(hist)).sum(1) + taste
+        # Cosine between the user's mean history direction and the candidate.
+        user = nn.functional.normalize((w.unsqueeze(-1) * self.item(hist)).sum(1), dim=-1)
         item = self.item(cand)
 
         match = (cand.unsqueeze(-1) == hist.unsqueeze(1)) & known.unsqueeze(1)
         slot = torch.arange(HISTORY, device=hist.device)
         latest = torch.where(match, slot, -1).max(-1).values + 1  # 0 = never clicked
         scores = (
-            (user.unsqueeze(1) * item).sum(-1)
+            self.scale * (user.unsqueeze(1) * item).sum(-1)
             + self.item_bias(cand).squeeze(-1)
             + self.repeat_slot(latest).squeeze(-1)
             + self.repeat_count * torch.log1p(match.sum(-1).float())
@@ -79,8 +75,7 @@ class ChoiceNet(nn.Module):
             + self.no_click_len(known.sum(1)).squeeze(-1)
             + self.user_no_click(user_idx).squeeze(-1)
         )
-        penalty = user.pow(2).sum(-1).mean() + item.pow(2).sum(-1).mean()
-        return torch.cat([scores, no_click.unsqueeze(1)], 1), penalty, taste.pow(2).sum(-1).mean()
+        return torch.cat([scores, no_click.unsqueeze(1)], 1)
 
 
 @dataclass(frozen=True)
@@ -154,15 +149,14 @@ def to_events(rows: pl.DataFrame, users: pl.DataFrame, items: pl.DataFrame) -> E
     )
 
 
-def initial_vectors(item_factors: np.ndarray) -> torch.Tensor:
-    """ALS item vectors behind a zero row for idx 0, scaled to unit mean length."""
-    factors = torch.from_numpy(np.asarray(item_factors, dtype=np.float32))
-    factors = factors / factors.norm(dim=1).mean()
-    return torch.cat([torch.zeros(1, factors.shape[1]), factors])
+def initial_vectors(item_unit: np.ndarray) -> torch.Tensor:
+    """Unit-length ALS item vectors behind a zero row for idx 0."""
+    unit = torch.from_numpy(np.asarray(item_unit, dtype=np.float32))
+    return torch.cat([torch.zeros(1, unit.shape[1]), unit])
 
 
 def fit_choice(stats: pl.LazyFrame, als: Als, params: dict = CHOICE_PARAMS) -> Choice:
-    """Train on every impression in the stats window, starting from the ALS item vectors."""
+    """Train on every impression in the stats window, on top of the ALS item vectors."""
     items = als.items.select("item_id", (pl.col("item_idx") + 1).alias("idx"))
     rows = stats.select(
         "event_id", "rowid", "user_id", "item_id", "history_item_ids", "clicked"
@@ -172,18 +166,14 @@ def fit_choice(stats: pl.LazyFrame, als: Als, params: dict = CHOICE_PARAMS) -> C
     ).select("user_id", "idx")
 
     torch.manual_seed(params["seed"])
-    net = ChoiceNet(initial_vectors(als.item_factors), users.height + 1).to(DEVICE)
+    net = ChoiceNet(initial_vectors(als.item_unit), users.height + 1).to(DEVICE)
     user, hist, cand, label = to_events(rows, users, items).tensors()
-    optimizer = torch.optim.Adam(net.parameters(), lr=params["lr"])
+    trainable = [p for p in net.parameters() if p.requires_grad]
+    optimizer = torch.optim.Adam(trainable, lr=params["lr"])
     loss_fn = nn.CrossEntropyLoss()
     for _ in range(params["epochs"]):
         for batch in torch.randperm(len(label), device=DEVICE).split(params["batch_size"]):
-            logits, penalty, taste_penalty = net(user[batch], hist[batch], cand[batch])
-            loss = (
-                loss_fn(logits, label[batch])
-                + params["l2"] * penalty
-                + params["user_l2"] * taste_penalty
-            )
+            loss = loss_fn(net(user[batch], hist[batch], cand[batch]), label[batch])
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -197,7 +187,7 @@ def choice_features(choice: Choice, target: pl.DataFrame) -> pl.DataFrame:
     user, hist, cand, _ = events.tensors()
     batches = zip(user.split(8192), hist.split(8192), cand.split(8192))
     with torch.no_grad():
-        logits = torch.cat([choice.net(u, h, c)[0] for u, h, c in batches]).cpu()
+        logits = torch.cat([choice.net(u, h, c) for u, h, c in batches]).cpu()
     probs = torch.softmax(logits, 1)
     return pl.DataFrame(
         {
