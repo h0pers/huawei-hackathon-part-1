@@ -1,0 +1,8 @@
+{
+  "authorization": "Latest user request /home/ig/.codex/attachments/d42fcb8a-6b07-4bfa-81ba-4f5d14a30852/Pasted text.txt explicitly requests exact archivedDCNalpha.5 full legal-cutoff export first.",
+  "scope": "Exactcfg1 refit only, no DCN architecture/HPO search. Prior genericDCN closure remains in force.",
+  "Jan24_caveat": "Original saved epoch0 zero correction; independently replayed, not represented as trained Jan24 gain.",
+  "full_refit": "SUCCESS: new model at cutoffJan27, fixed4epochs andvalidatedrollingJan24\u201326 features; global foundation fitted onalllegalPhase1data.",
+  "verification": "<original-research-workspace>/attack_results/submission_dcn05/verification.json",
+  "public_score": "UNKNOWN; portalURL pending; no leaderboard upload performed."
+}
