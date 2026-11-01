@@ -59,3 +59,27 @@ Huawei Tech Arena hackathon ML project.
 
 --------
 
+
+## Best model
+
+`techarena/modeling/joint.py` is a LightGBM over softmax matrix factorization features and the older ALS and choice features. It scored 0.827606 on the public leaderboard.
+
+```bash
+make data                                          # raw files to data/interim parquet
+.venv/bin/python -m techarena.events               # optional: load_cache builds it when missing
+.venv/bin/python -m techarena.modeling.joint validate
+.venv/bin/python -m techarena.modeling.joint submit   # writes models/submission_joint.csv
+.venv/bin/python -m techarena.modeling.joint check models/submission_joint.csv
+```
+
+| Step | Time | Peak memory |
+|---|---|---|
+| Event cache | 10 s | 11 GB |
+| `validate` | about 5 min | 15 GB |
+| `submit` | about 7 min | 21 GB |
+
+Times are from a 48 GB Mac using the MPS device, with both steps running at once and the ALS start vectors not yet cached. Results vary slightly between runs because MPS training is not fully deterministic: validation repeated at 0.81298 and 0.81299.
+
+`submit` overwrites `models/submission_joint.csv` by default. Use `--output` to keep an earlier file.
+
+`reports/experiment_log.md` records every change and whether it was kept. `research_notes.md` lists the ideas and their sources.
