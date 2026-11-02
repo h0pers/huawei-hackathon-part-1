@@ -83,3 +83,25 @@ Times are from a 48 GB Mac using the MPS device, with both steps running at once
 `submit` overwrites `models/submission_joint.csv` by default. Use `--output` to keep an earlier file.
 
 `reports/experiment_log.md` records every change and whether it was kept. `research_notes.md` lists the ideas and their sources.
+
+## Current best: `models/submission_groups.csv` (public 0.829556)
+
+Joint LightGBM plus posterior-averaged softmax features, ALS cosine columns at 12, 16 and 24 factors, and tied item-group softmax features. Run from the project root:
+
+```bash
+export PYTHONPATH=.
+.venv/bin/python research/build_als_columns.py eval
+.venv/bin/python research/build_submission.py eval 430 models/submission_groups.csv
+.venv/bin/python research/validate_submission.py models/submission_groups.csv
+```
+
+| Step | Approximate time | Peak memory |
+|---|---|---|
+| `build_als_columns` | 10-20 min | Under 10 GB, estimated |
+| `build_submission` | 1-1.5 hours from an empty cache | 21 GB plus about 2 GB for sampling, estimated |
+
+To validate on a past window, replace `eval` with its start time, for example `1737676800` (v24) or `1737849600` (v26), and leave out the rounds and output file.
+
+Times come from separate runs on a 48 GB Mac using MPS, and the sequence has not been rerun from an empty cache. Results vary slightly between runs because MPS training is not fully deterministic. Cached columns live in `data/processed/research/`.
+
+`hypotheses.md`, `reports/experiment_log.md` and `research_notes.md` record the research.
